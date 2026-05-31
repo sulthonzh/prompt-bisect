@@ -1,0 +1,26 @@
+{
+  "name": "prompt-bisect",
+  "version": "1.0.0",
+  "description": "CI regression testing for AI prompts — snapshot, diff, bisect behavioral drift across model updates",
+  "main": "dist/index.js",
+  "bin": {
+    "prompt-bisect": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test dist/**/*.test.js",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["prompt", "regression", "testing", "ci", "ai", "llm", "bisect", "drift"],
+  "author": "sulthonzh",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0"
+  },
+  "files": ["dist/", "README.md", "LICENSE"]
+}
