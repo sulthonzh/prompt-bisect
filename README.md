@@ -24,21 +24,24 @@ npm install -g prompt-bisect
 ## Quick Start
 
 ```bash
-# Initialize (creates .prompt-snapshots/golden.json)
+# Initialize prompt-bisect
 prompt-bisect init
 
-# Add a golden snapshot
+# Add your first golden snapshot
 prompt-bisect add \
   --prompt "Summarize this article in 2 sentences" \
-  --output "The article discusses..." \
+  --output "The article discusses AI safety and ethics..." \
   --model gpt-4 \
   --id summarize-v1 \
-  --tags summarization,core
+  --tags summarization,content
+
+# View your prompt collection
+prompt-bisect stats
 
 # After a model update, compare new outputs
-prompt-bisect compare --file new-outputs.json
+prompt-bisect compare --file outputs.json
 
-# Find when a prompt's output started drifting
+# Find when drift started
 prompt-bisect bisect --id summarize-v1
 ```
 
@@ -48,7 +51,11 @@ prompt-bisect bisect --id summarize-v1
 Create the snapshots directory and golden set file.
 
 ```bash
-prompt-bisect init [--dir .prompt-snapshots]
+# Default location
+prompt-bisect init
+
+# Custom location
+prompt-bisect init --dir ./my-snapshots
 ```
 
 ### `add`
@@ -67,7 +74,14 @@ prompt-bisect add \
 List all snapshots. Filter by tag or model.
 
 ```bash
-prompt-bisect list [--tag summarization] [--model gpt-4] [--json | --markdown]
+# List all snapshots
+prompt-bisect list
+
+# Filter by tag
+prompt-bisect list --tag summarization
+
+# Filter by model and JSON output
+prompt-bisect list --model gpt-4 --json
 ```
 
 ### `remove`
@@ -98,11 +112,28 @@ Walk through history to find when a prompt's output first drifted from the golde
 prompt-bisect bisect --id summarize-v1 [--threshold 0.8]
 ```
 
+### `stats`
+Show statistics about your prompt set (count by model, tags, avg lengths).
+
+```bash
+# View prompt statistics
+prompt-bisect stats
+
+# Statistics in JSON format
+prompt-bisect stats --json
+```
+
 ### `import` / `export`
 Import snapshots from a JSON file or export the golden set.
 
 ```bash
+# Import snapshots from backup
 prompt-bisect import --file snapshots.json
+
+# Export (default: golden-export.json)
+prompt-bisect export
+
+# Export to custom location
 prompt-bisect export --file backup.json
 ```
 

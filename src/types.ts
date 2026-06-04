@@ -53,7 +53,7 @@ export type OutputFormat = 'text' | 'json' | 'markdown';
 
 export interface BisectConfig {
   threshold: number;        // similarity threshold (0-1), default 0.8
-  method: 'string' | 'embedding' | 'structured';
+  method: 'string' | 'structured';  // comparison method
   snapshotsDir: string;     // directory for snapshots
   provider?: 'openai' | 'anthropic' | 'custom';
   apiKey?: string;

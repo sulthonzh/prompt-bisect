@@ -145,11 +145,17 @@ function formatBisectMarkdown(result: BisectResult): string {
 // --- Commands ---
 
 function cmdInit(store: SnapshotStore, format: OutputFormat): void {
-  store.init();
-  if (format === 'json') {
-    console.log(JSON.stringify({ status: 'initialized', dir: store['config'].snapshotsDir }));
-  } else {
-    console.log(`Initialized prompt-bisect in ${store['config'].snapshotsDir}/`);
+  try {
+    store.init();
+    if (format === 'json') {
+      console.log(JSON.stringify({ status: 'initialized', dir: store['config'].snapshotsDir }));
+    } else {
+      console.log(`✓ Initialized prompt-bisect in ${store['config'].snapshotsDir}/`);
+      console.log(`Ready to add your first prompt with: prompt-bisect add --prompt "..." --output "..."`);
+    }
+  } catch (err) {
+    console.error(`Error initializing prompt-bisect:`, err instanceof Error ? err.message : String(err));
+    process.exit(1);
   }
 }
 
@@ -161,20 +167,47 @@ function cmdAdd(store: SnapshotStore, args: Record<string, string | boolean>, fo
   const tags = args.tags ? (args.tags as string).split(',') : [];
 
   if (!prompt || !output) {
-    console.error('Usage: prompt-bisect add --prompt "..." --output "..." [--model ...] [--id ...] [--tags a,b]');
+    console.error('Error: --prompt and --output are required');
+    console.log('Usage: prompt-bisect add --prompt "..." --output "..." [--model ...] [--id ...] [--tags a,b]');
     process.exit(1);
   }
 
   // If output is a file path, read it
   let outputText = output;
   if (fs.existsSync(output)) {
-    outputText = fs.readFileSync(output, 'utf-8');
+    try {
+      outputText = fs.readFileSync(output, 'utf-8');
+      if (!outputText.trim()) {
+        throw new Error('Output file is empty');
+      }
+    } catch (err) {
+      console.error(`Error reading output file ${output}:`, err instanceof Error ? err.message : String(err));
+      process.exit(1);
+    }
   }
 
   // Same for prompt
   let promptText = prompt;
   if (fs.existsSync(prompt)) {
-    promptText = fs.readFileSync(prompt, 'utf-8');
+    try {
+      promptText = fs.readFileSync(prompt, 'utf-8');
+      if (!promptText.trim()) {
+        throw new Error('Prompt file is empty');
+      }
+    } catch (err) {
+      console.error(`Error reading prompt file ${prompt}:`, err instanceof Error ? err.message : String(err));
+      process.exit(1);
+    }
+  }
+
+  if (!promptText.trim()) {
+    console.error('Error: Prompt text cannot be empty');
+    process.exit(1);
+  }
+
+  if (!outputText.trim()) {
+    console.error('Error: Output text cannot be empty');
+    process.exit(1);
   }
 
   const snapshot: PromptSnapshot = {
@@ -186,12 +219,16 @@ function cmdAdd(store: SnapshotStore, args: Record<string, string | boolean>, fo
     tags,
   };
 
-  store.add(snapshot);
-
-  if (format === 'json') {
-    console.log(JSON.stringify({ status: 'added', id: snapshot.id }));
-  } else {
-    console.log(`Added snapshot: ${id}`);
+  try {
+    store.add(snapshot);
+    if (format === 'json') {
+      console.log(JSON.stringify({ status: 'added', id: snapshot.id }));
+    } else {
+      console.log(`✓ Added snapshot: ${id}`);
+    }
+  } catch (err) {
+    console.error(`Error adding snapshot:`, err instanceof Error ? err.message : String(err));
+    process.exit(1);
   }
 }
 
@@ -217,17 +254,25 @@ function cmdList(store: SnapshotStore, args: Record<string, string | boolean>, f
   }
 
   if (snapshots.length === 0) {
-    console.log('No snapshots found.');
+    console.log('No snapshots found. Use `prompt-bisect add` to add your first prompt.');
     return;
   }
 
   console.log(`\n  ${snapshots.length} snapshot(s):\n`);
-  for (const s of snapshots) {
-    console.log(`  ${s.id}`);
-    console.log(`    model: ${s.model}`);
-    console.log(`    prompt: ${s.prompt.slice(0, 60)}${s.prompt.length > 60 ? '...' : ''}`);
-    console.log(`    tags: ${s.tags?.join(', ') || 'none'}`);
-    console.log(`    created: ${s.timestamp}`);
+  
+  // Group by model for better readability
+  const byModel = snapshots.reduce((acc, s) => {
+    if (!acc[s.model]) acc[s.model] = [];
+    acc[s.model].push(s);
+    return acc;
+  }, {} as Record<string, typeof snapshots>);
+
+  for (const [model, modelSnapshots] of Object.entries(byModel)) {
+    console.log(`  ${model} (${modelSnapshots.length}):`);
+    for (const s of modelSnapshots) {
+      const tagStr = s.tags?.length ? `[${s.tags.join(', ')}] ` : '';
+      console.log(`    ${s.id} ${tagStr}${s.timestamp}`);
+    }
     console.log('');
   }
 }
@@ -235,131 +280,284 @@ function cmdList(store: SnapshotStore, args: Record<string, string | boolean>, f
 function cmdRemove(store: SnapshotStore, args: Record<string, string | boolean>, format: OutputFormat): void {
   const id = args.id as string;
   if (!id) {
-    console.error('Usage: prompt-bisect remove --id <snapshot-id>');
+    console.error('Error: --id is required');
+    console.log('Usage: prompt-bisect remove --id <snapshot-id>');
     process.exit(1);
   }
 
-  const removed = store.remove(id);
-  if (format === 'json') {
-    console.log(JSON.stringify({ status: removed ? 'removed' : 'not_found', id }));
-  } else {
-    console.log(removed ? `Removed ${id}` : `Not found: ${id}`);
+  try {
+    const removed = store.remove(id);
+    if (format === 'json') {
+      console.log(JSON.stringify({ status: removed ? 'removed' : 'not_found', id }));
+    } else {
+      console.log(removed ? `✓ Removed ${id}` : `✗ Not found: ${id}`);
+    }
+  } catch (err) {
+    console.error(`Error removing snapshot ${id}:`, err instanceof Error ? err.message : String(err));
+    process.exit(1);
   }
 }
 
 function cmdCompare(store: SnapshotStore, config: BisectConfig, args: Record<string, string | boolean>, format: OutputFormat): void {
   const file = args.file as string;
   if (!file) {
-    console.error('Usage: prompt-bisect compare --file <outputs.json>');
+    console.error('Error: --file is required');
+    console.log('Usage: prompt-bisect compare --file <outputs.json> [--threshold 0.8] [--method string|structured]');
     process.exit(1);
   }
 
   if (!fs.existsSync(file)) {
-    console.error(`File not found: ${file}`);
+    console.error(`Error: File not found: ${file}`);
     process.exit(1);
   }
 
-  const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
-  const outputs: { id: string; output: string }[] = Array.isArray(data) ? data : data.outputs;
+  try {
+    const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    const outputs: { id: string; output: string }[] = Array.isArray(data) ? data : data.outputs;
 
-  if (!outputs || !Array.isArray(outputs)) {
-    console.error('Expected JSON array of { id, output }');
+    if (!outputs || !Array.isArray(outputs)) {
+      console.error('Error: Expected JSON array of { id, output }');
+      process.exit(1);
+    }
+
+    // Check for empty outputs
+    if (outputs.length === 0) {
+      console.error('Error: No outputs provided in the file');
+      process.exit(1);
+    }
+
+    const runner = new BisectRunner(config);
+    const result = runner.compare(outputs);
+
+    // Exit with non-zero code if any prompts failed
+    if (format !== 'json' && (result.failed > 0 || result.errors > 0)) {
+      outputResult(result, format, 'run');
+      process.exit(1);
+    }
+
+    outputResult(result, format, 'run');
+  } catch (err) {
+    console.error('Error comparing outputs:', err instanceof Error ? err.message : String(err));
     process.exit(1);
   }
-
-  const runner = new BisectRunner(config);
-  const result = runner.compare(outputs);
-
-  outputResult(result, format, 'run');
 }
 
 function cmdBisect(store: SnapshotStore, config: BisectConfig, args: Record<string, string | boolean>, format: OutputFormat): void {
   const promptId = args.id as string;
   if (!promptId) {
-    console.error('Usage: prompt-bisect bisect --id <prompt-id>');
+    console.error('Error: --id is required');
+    console.log('Usage: prompt-bisect bisect --id <prompt-id> [--threshold 0.8]');
     process.exit(1);
   }
 
-  const runner = new BisectRunner(config);
-  const result = runner.bisect(promptId);
+  try {
+    const runner = new BisectRunner(config);
+    const result = runner.bisect(promptId);
 
-  if (!result) {
-    console.error('No history found for this prompt.');
+    if (!result) {
+      console.error(`No history found for prompt: ${promptId}`);
+      console.log('Tip: Run some comparisons first to build history');
+      process.exit(1);
+    }
+
+    if (format === 'json') {
+      console.log(JSON.stringify(result, null, 2));
+    } else if (format === 'markdown') {
+      console.log(formatBisectMarkdown(result));
+    } else {
+      console.log(formatBisectText(result));
+    }
+  } catch (err) {
+    console.error(`Error running bisect for ${promptId}:`, err instanceof Error ? err.message : String(err));
     process.exit(1);
-  }
-
-  if (format === 'json') {
-    console.log(JSON.stringify(result, null, 2));
-  } else if (format === 'markdown') {
-    console.log(formatBisectMarkdown(result));
-  } else {
-    console.log(formatBisectText(result));
   }
 }
 
 function cmdImport(store: SnapshotStore, args: Record<string, string | boolean>, format: OutputFormat): void {
   const file = args.file as string;
   if (!file) {
-    console.error('Usage: prompt-bisect import --file <snapshots.json>');
+    console.error('Error: --file is required');
+    console.log('Usage: prompt-bisect import --file <snapshots.json>');
     process.exit(1);
   }
 
-  const added = store.import(file);
-  if (format === 'json') {
-    console.log(JSON.stringify({ status: 'imported', added }));
-  } else {
-    console.log(`Imported ${added} new snapshot(s)`);
+  if (!fs.existsSync(file)) {
+    console.error(`Error: File not found: ${file}`);
+    process.exit(1);
   }
+
+  try {
+    const added = store.import(file);
+    if (format === 'json') {
+      console.log(JSON.stringify({ status: 'imported', added }));
+    } else {
+      console.log(`✓ Imported ${added} new snapshot(s)`);
+    }
+  } catch (err) {
+    console.error(`Error importing snapshots:`, err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+}
+
+function cmdStats(store: SnapshotStore, args: Record<string, string | boolean>, format: OutputFormat): void {
+  const golden = store.load();
+  const snapshots = golden.prompts;
+  
+  if (snapshots.length === 0) {
+    if (format === 'json') {
+      console.log(JSON.stringify({ total: 0, models: {}, tags: {} }));
+    } else {
+      console.log('No snapshots found.');
+    }
+    return;
+  }
+  
+  // Calculate statistics
+  const models = snapshots.reduce((acc, s) => {
+    acc[s.model] = (acc[s.model] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+  
+  const tags = snapshots.reduce((acc, s) => {
+    s.tags?.forEach(tag => {
+      acc[tag] = (acc[tag] || 0) + 1;
+    });
+    return acc;
+  }, {} as Record<string, number>);
+  
+  const avgPromptLength = snapshots.reduce((sum, s) => sum + s.prompt.length, 0) / snapshots.length;
+  const avgOutputLength = snapshots.reduce((sum, s) => sum + s.output.length, 0) / snapshots.length;
+  
+  if (format === 'json') {
+    console.log(JSON.stringify({
+      total: snapshots.length,
+      models,
+      tags,
+      avgPromptLength: Math.round(avgPromptLength),
+      avgOutputLength: Math.round(avgOutputLength),
+      createdAt: golden.created,
+    }, null, 2));
+    return;
+  }
+  
+  // Text output
+  console.log(`\n  Prompt Bisect Statistics\n  ${'─'.repeat(40)}`);
+  console.log(`  Total prompts: ${snapshots.length}`);
+  console.log(`  Created: ${new Date(golden.created).toLocaleDateString()}`);
+  console.log(`\n  By Model:`);
+  Object.entries(models).forEach(([model, count]) => {
+    console.log(`    ${model}: ${count}`);
+  });
+  
+  const tagEntries = Object.entries(tags).sort(([,a], [,b]) => b - a);
+  if (tagEntries.length > 0) {
+    console.log(`\n  Top Tags:`);
+    tagEntries.slice(0, 5).forEach(([tag, count]) => {
+      console.log(`    ${tag}: ${count}`);
+    });
+  }
+  
+  console.log(`\n  Average prompt length: ${Math.round(avgPromptLength)} chars`);
+  console.log(`  Average output length: ${Math.round(avgOutputLength)} chars`);
 }
 
 function cmdExport(store: SnapshotStore, args: Record<string, string | boolean>, format: OutputFormat): void {
   const file = (args.file as string) || 'golden-export.json';
-  store.export(file);
-  if (format === 'json') {
-    console.log(JSON.stringify({ status: 'exported', file }));
-  } else {
-    console.log(`Exported golden set to ${file}`);
+  
+  try {
+    store.export(file);
+    if (format === 'json') {
+      console.log(JSON.stringify({ status: 'exported', file }));
+    } else {
+      console.log(`✓ Exported golden set to ${file}`);
+    }
+  } catch (err) {
+    console.error(`Error exporting golden set:`, err instanceof Error ? err.message : String(err));
+    process.exit(1);
   }
 }
 
-function outputResult(result: RunResult, format: OutputFormat, type: 'run' | 'bisect'): void {
+function outputResult(result: RunResult | any, format: OutputFormat, type: 'run' | 'bisect'): void {
   if (format === 'json') {
     console.log(JSON.stringify(result, null, 2));
   } else if (format === 'markdown') {
-    console.log(formatRunMarkdown(result));
+    if (type === 'run') {
+      console.log(formatRunMarkdown(result));
+    } else {
+      console.log(formatBisectMarkdown(result));
+    }
   } else {
-    console.log(formatRunText(result));
+    if (type === 'run') {
+      console.log(formatRunText(result));
+    } else {
+      console.log(formatBisectText(result));
+    }
   }
 }
 
 // --- Main ---
 
+function printHelp(): void {
+  console.log(`
+  prompt-bisect — CI regression testing for AI prompts
+  The git bisect for prompt drift across model updates
+
+  Commands:
+
+    init                  Create snapshots directory and golden set
+    add                   Add a prompt snapshot to golden set
+    list                  List all snapshots
+    stats                 Show statistics about your prompt set
+    remove                Remove a snapshot from golden set
+    compare               Compare new outputs against golden set
+    bisect                Find when a prompt's output started drifting
+    import                Import snapshots from JSON file
+    export                Export golden set to JSON file
+
+  Usage Examples:
+
+    # Initialize prompt-bisect
+    prompt-bisect init
+    prompt-bisect init --dir ./my-snapshots
+
+    # Add a golden snapshot
+    prompt-bisect add \
+      --prompt "Summarize this in 3 sentences" \
+      --output "This article discusses..." \
+      --model gpt-4 \
+      --id article-summarizer-v1 \
+      --tags summarization,content
+
+    # List snapshots with filter
+    prompt-bisect list --tag summarization --json
+
+    # View prompt set statistics
+    prompt-bisect stats
+
+    # Compare new outputs
+    prompt-bisect compare --file outputs.json --threshold 0.85
+
+    # Find when drift started
+    prompt-bisect bisect --id article-summarizer-v1
+
+  Options:
+    --threshold <float>    Similarity threshold 0.0-1.0 (default: 0.8)
+    --method <type>       Comparison method: string, structured (default: string)
+    --dir <path>          Snapshots directory (default: .prompt-snapshots)
+    --json                Machine-readable JSON output
+    --markdown            Markdown formatted output
+
+  For more help, see: https://github.com/sulthonzh/prompt-bisect
+`);
+  process.exit(0);
+}
+
 function main(): void {
   const args = parseArgs(process.argv);
   const command = process.argv[2];
 
-  if (!command || command.startsWith('--')) {
-    console.log(`
-  prompt-bisect — CI regression testing for AI prompts
-
-  Usage:
-    prompt-bisect init [--dir .prompt-snapshots]
-    prompt-bisect add --prompt "..." --output "..." [--model ...] [--id ...] [--tags a,b]
-    prompt-bisect list [--tag ...] [--model ...] [--json | --markdown]
-    prompt-bisect remove --id <id>
-    prompt-bisect compare --file <outputs.json> [--threshold 0.8] [--method string|structured]
-    prompt-bisect bisect --id <prompt-id> [--threshold 0.8]
-    prompt-bisect import --file <snapshots.json>
-    prompt-bisect export [--file output.json]
-
-  Options:
-    --threshold <float>   Similarity threshold (default: 0.8)
-    --method <type>       Comparison method: string, structured (default: string)
-    --dir <path>          Snapshots directory (default: .prompt-snapshots)
-    --json                Output as JSON
-    --markdown            Output as Markdown
-`);
-    process.exit(0);
+  if (!command || command.startsWith('--') || command === 'help' || command === '--help') {
+    printHelp();
   }
 
   const config = getConfig(args);
@@ -375,6 +573,9 @@ function main(): void {
       break;
     case 'list':
       cmdList(store, args, format);
+      break;
+    case 'stats':
+      cmdStats(store, args, format);
       break;
     case 'remove':
       cmdRemove(store, args, format);
@@ -393,6 +594,7 @@ function main(): void {
       break;
     default:
       console.error(`Unknown command: ${command}`);
+      console.log('Use "prompt-bisect help" for usage information');
       process.exit(1);
   }
 }
