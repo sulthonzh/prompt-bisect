@@ -8,3 +8,8 @@ tsconfig.json
 !.env.example
 !.env.template
 dist/
+build/
+__pycache__/
+.venv/
+*.egg-info/
+.mypy_cache/
